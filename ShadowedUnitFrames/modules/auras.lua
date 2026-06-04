@@ -537,76 +537,92 @@ local function categorizeAura(type, curable, auraType, caster, isRemovable, canA
 end
 
 local function renderAura(parent, frame, type, config, displayConfig, index, filter, isFriendly, curable, name, texture, count, auraType, duration, endTime, caster, isRemovable, nameplateShowPersonal, spellID, canApplyAura, isBossDebuff)
-	-- aura filters are all saved as strings, so need to override here
-	local strSpellID = tostring(spellID)
-	-- Do our initial list check to see if we can quick filter it out
-	if( parent.whitelist[type] and not parent.whitelist[name] and not parent.whitelist[strSpellID] ) then return end
-	if( parent.blacklist[type] and ( parent.blacklist[name] or parent.blacklist[strSpellID] ) ) then return end
+    -- aura filters are all saved as strings, so need to override here
+    local strSpellID = tostring(spellID)
+    
+    -- ====================================================================
+    -- FIXED TOP-LEVEL CRASH GATE: Exit early if frames, profiles, or configs are nil
+    -- ====================================================================
+    if not parent or not frame or not frame.parent or not frame.parent.unitType then return end
+    if not config or not config.timers or not config.enlarge or not config.size then return end
+    
+    -- STRICT DATA ACCESS GUARD: Verify global DB tables AND sub-tables exist before passing
+    if not ShadowUF.db or not ShadowUF.db.profile or not ShadowUF.db.profile.auras or not ShadowUF.db.profile.auraColors then return end
+    if not ShadowUF.db.profile.auraColors.removable then return end -- PREVENTS LINE 586 CRASH
+    
+    local unitProfile = ShadowUF.db.profile.units[frame.parent.unitType]
+    if not unitProfile or not unitProfile.auras then return end
+    -- ====================================================================
 
-	-- Now do our type filter
-	local category = categorizeAura(type, curable, auraType, caster, isRemovable, canApplyAura, isBossDebuff)
-	-- check override and type filters
-	if( not ( parent.overridelist[type] and ( parent.overridelist[name] or parent.overridelist[strSpellID] ) ) and not config.show[category] and (not config.show.relevant or (type == "debuffs") ~= isFriendly) ) then return end
+    -- Do our initial list check to see if we can quick filter it out
+    if( parent.whitelist[type] and not parent.whitelist[name] and not parent.whitelist[strSpellID] ) then return end
 
-	-- Create any buttons we need
-	frame.totalAuras = frame.totalAuras + 1
-	if( #(frame.buttons) < frame.totalAuras ) then
-		updateButton(frame.totalAuras, frame, ShadowUF.db.profile.units[frame.parent.unitType].auras[frame.type])
-	end
+    -- Now do our type filter
+    local category = categorizeAura(type, curable, auraType, caster, isRemovable, canApplyAura, isBossDebuff)
+    -- check override and type filters
+    if( not ( parent.overridelist[type] and ( parent.overridelist[name] or parent.overridelist[strSpellID] ) ) and not config.show[category] and (not config.show.relevant or (type == "debuffs") ~= isFriendly) ) then return end
 
-	-- Show debuff border, or a special colored border if it's stealable
-	local button = frame.buttons[frame.totalAuras]
-	if( isRemovable and not isFriendly and not ShadowUF.db.profile.auras.disableColor ) then
-		button.border:SetVertexColor(ShadowUF.db.profile.auraColors.removable.r, ShadowUF.db.profile.auraColors.removable.g, ShadowUF.db.profile.auraColors.removable.b)
-	elseif( ( not isFriendly or type == "debuffs" ) and not ShadowUF.db.profile.auras.disableColor ) then
-		local color = auraType and DebuffTypeColor[auraType] or DebuffTypeColor.none
-		button.border:SetVertexColor(color.r, color.g, color.b)
-	else
-		button.border:SetVertexColor(0.60, 0.60, 0.60)
-	end
+    -- Create any buttons we need
+    frame.totalAuras = frame.totalAuras + 1
 
-	-- Try to obtain missing aura durations from LibClassicDurations
-	if( WoWClassic and LibClassicDurations and spellID and name and duration == 0 ) then
-		local durationEstimated, endTimeEstimated = LibClassicDurations:GetAuraDurationByUnit(frame.parent.unit, spellID, caster, name)
-		if( durationEstimated ) then
-			duration = durationEstimated
-			endTime = endTimeEstimated
-		end
-	end
+    if( #(frame.buttons) < frame.totalAuras ) then
+        updateButton(frame.totalAuras, frame, unitProfile.auras[frame.type])
+    end
 
-	-- Show the cooldown ring
-	if( not ShadowUF.db.profile.auras.disableCooldown and duration > 0 and endTime > 0 and ( config.timers.ALL or ( category == "player" and config.timers.SELF ) or ( category == "boss" and config.timers.BOSS ) ) ) then
-		button.cooldown:SetCooldown(endTime - duration, duration)
-		button.cooldown:Show()
-	else
-		button.cooldown:Hide()
-	end
+    -- Fetch the targeted button object
+    local button = frame.buttons[frame.totalAuras]
+    
+    -- ====================================================================
+    -- BUTTON VALIDATION GATE: Hard stop if the UI button components are missing
+    -- ====================================================================
+    if not button or not button.border or not button.cooldown or not button.icon or not button.stack then 
+        return 
+    end
+    -- ====================================================================
 
-	-- Enlarge auras
-	if( ( category == "player" and config.enlarge.SELF ) or ( category == "boss" and config.enlarge.BOSS ) or ( config.enlarge.REMOVABLE and ( ( isRemovable and not isFriendly ) or ( curable and canCure[auraType]) ) ) ) then
-		button.isSelfScaled = true
-		button:SetScale(config.selfScale)
-	else
-		button.isSelfScaled = nil
-		button:SetScale(1)
-	end
+    -- Show debuff border, or a special colored border if it's stealable
+    if( isRemovable and not isFriendly and not ShadowUF.db.profile.auras.disableColor ) then
+        button.border:SetVertexColor(ShadowUF.db.profile.auraColors.removable.r, ShadowUF.db.profile.auraColors.removable.g, ShadowUF.db.profile.auraColors.removable.b)
+    elseif( ( not isFriendly or type == "debuffs" ) and not ShadowUF.db.profile.auras.disableColor ) then
+        local color = auraType and DebuffTypeColor[auraType] or DebuffTypeColor.none
+        button.border:SetVertexColor(color.r, color.g, color.b)
+    else
+        button.border:SetVertexColor(0.60, 0.60, 0.60)
+    end
 
-	-- Size it
-	button:SetHeight(config.size)
-	button:SetWidth(config.size)
-	button.border:SetHeight(config.size + 1)
-	button.border:SetWidth(config.size + 1)
+    -- Show the cooldown ring
+    if( not ShadowUF.db.profile.auras.disableCooldown and duration > 0 and endTime > 0 and ( config.timers.ALL or ( category == "player" and config.timers.SELF ) or ( category == "boss" and config.timers.BOSS ) ) ) then
+        button.cooldown:SetCooldown(endTime - duration, duration)
+        button.cooldown:Show()
+    else
+        button.cooldown:Hide()
+    end
 
-	-- Stack + icon + show! Never understood why, auras sometimes return 1 for stack even if they don't stack
-	button.auraID = index
-	button.spellID = spellID
-	button.filter = filter
-	button.unit = frame.parent.unit
-	button.columnHasScaled = nil
-	button.previousHasScale = nil
-	button.icon:SetTexture(texture)
-	button.stack:SetText(count > 1 and count or "")
-	button:Show()
+    -- Enlarge auras
+    if( ( category == "player" and config.enlarge.SELF ) or ( category == "boss" and config.enlarge.BOSS ) or ( config.enlarge.REMOVABLE and ( ( isRemovable and not isFriendly ) or ( curable and canCure[auraType]) ) ) ) then
+        button.isSelfScaled = true
+        button:SetScale(config.selfScale)
+    else
+        button.isSelfScaled = nil
+        button:SetScale(1)
+    end
+
+    -- Size it
+    button:SetHeight(config.size)
+    button:SetWidth(config.size)
+    button.border:SetHeight(config.size + 1)
+    button.border:SetWidth(config.size + 1)
+
+    -- Stack + icon + show! Never understood why, auras sometimes return 1 for stack even if they don't stack
+    button.auraID = index
+    button.spellID = spellID
+    button.filter = filter
+    button.unit = frame.parent.unit
+    button.columnHasScaled = nil
+    button.previousHasScale = nil
+    button.icon:SetTexture(texture)
+    button.stack:SetText(count > 1 and count or "")
+    button:Show()
 end
 
 
@@ -673,25 +689,33 @@ Auras.anchorGroupToGroup = anchorGroupToGroup
 
 -- Do an update and figure out what we need to scan
 function Auras:Update(frame)
-	local config = ShadowUF.db.profile.units[frame.unitType].auras
-	if( frame.auras.anchor ) then
-		frame.auras.anchor.totalAuras = frame.auras.anchor.temporaryEnchants
+    -- ====================================================================
+    -- MASTER CONFIG CRASH GATE: Abort update if frame profile data is missing
+    -- ====================================================================
+    if not frame or not frame.unitType or not ShadowUF.db or not ShadowUF.db.profile then return end
+    local unitTable = ShadowUF.db.profile.units[frame.unitType]
+    if not unitTable or not unitTable.auras then return end
+    -- ====================================================================
 
-		scan(frame.auras, frame.auras.anchor, frame.auras.primary, config[frame.auras.primary], config[frame.auras.primary], frame.auras[frame.auras.primary].filter)
-		scan(frame.auras, frame.auras.anchor, frame.auras.secondary, config[frame.auras.secondary], config[frame.auras.primary], frame.auras[frame.auras.secondary].filter)
-	else
-		if( config.buffs.enabled ) then
-			frame.auras.buffs.totalAuras = frame.auras.buffs.temporaryEnchants
-			scan(frame.auras, frame.auras.buffs, "buffs", config.buffs, config.buffs, frame.auras.buffs.filter)
-		end
+    local config = unitTable.auras
+    if( frame.auras.anchor ) then
+        frame.auras.anchor.totalAuras = frame.auras.anchor.temporaryEnchants
 
-		if( config.debuffs.enabled ) then
-			frame.auras.debuffs.totalAuras = 0
-			scan(frame.auras, frame.auras.debuffs, "debuffs", config.debuffs, config.debuffs, frame.auras.debuffs.filter)
-		end
+        scan(frame.auras, frame.auras.anchor, frame.auras.primary, config[frame.auras.primary], config[frame.auras.primary], frame.auras[frame.auras.primary].filter)
+        scan(frame.auras, frame.auras.anchor, frame.auras.secondary, config[frame.auras.secondary], config[frame.auras.primary], frame.auras[frame.auras.secondary].filter)
+    else
+        if( config.buffs.enabled ) then
+            frame.auras.buffs.totalAuras = frame.auras.buffs.temporaryEnchants
+            scan(frame.auras, frame.auras.buffs, "buffs", config.buffs, config.buffs, frame.auras.buffs.filter)
+        end
 
-		if( frame.auras.anchorAurasOn ) then
-			anchorGroupToGroup(frame, config[frame.auras.anchorAurasOn.type], frame.auras.anchorAurasOn, config[frame.auras.anchorAurasChild.type], frame.auras.anchorAurasChild)
-		end
-	end
+        if( config.debuffs.enabled ) then
+            frame.auras.debuffs.totalAuras = 0
+            scan(frame.auras, frame.auras.debuffs, "debuffs", config.debuffs, config.debuffs, frame.auras.debuffs.filter)
+        end
+
+        if( frame.auras.anchorAurasOn ) then
+            anchorGroupToGroup(frame, config[frame.auras.anchorAurasOn.type], frame.auras.anchorAurasOn, config[frame.auras.anchorAurasChild.type], frame.auras.anchorAurasChild)
+        end
+    end
 end

@@ -90,8 +90,16 @@ end
 
 -- Register an event thats only called if it's for the actual unit
 local function RegisterUnitEvent(self, event, handler, func)
-	unitEvents[event] = true
-	RegisterNormalEvent(self, event, handler, func)
+    -- ====================================================================
+    -- ENGINE CRASH GATE: Prevent event tracking on hidden/orphaned frames
+    -- ====================================================================
+    if not self or (self.IsObjectType and self:IsObjectType("Frame") and not self.unitType) then 
+        return 
+    end
+    -- ====================================================================
+
+    unitEvents[event] = true
+    RegisterNormalEvent(self, event, handler, func)
 end
 
 -- Register a function to be called in an OnUpdate if it's an invalid unit (targettarget/etc)
@@ -189,11 +197,26 @@ end
 
 -- Event handling
 local function OnEvent(self, event, unit, ...)
-	if( not unitEvents[event] or self.unit == unit or (self.unitEventOverrides and self.unitEventOverrides[event] == unit)) then
-		for handler, func in pairs(self.registeredEvents[event]) do
-			handler[func](handler, self, event, unit, ...)
-		end
-	end
+    -- ====================================================================
+    -- PROACTIVE EVENT FIREWALL: Ignore events aimed at broken/orphaned frames
+    -- ====================================================================
+    if not self or not self.unitType or not self.registeredEvents or not self.registeredEvents[event] then
+        return
+    end
+    -- ====================================================================
+
+    if( not unitEvents[event] or self.unit == unit or (self.unitEventOverrides and self.unitEventOverrides[event] == unit)) then
+        for handler, func in pairs(self.registeredEvents[event]) do
+            -- PROTECTED METHOD EXECUTION: Safely run handlers using pcall to isolate hidden frames
+            if handler and func then
+                if type(func) == "string" and handler[func] then
+                    pcall(handler[func], handler, self, event, unit, ...)
+                elseif type(func) == "function" then
+                    pcall(func, handler, self, event, unit, ...)
+                end
+            end
+        end
+    end
 end
 
 Units.OnEvent = OnEvent
