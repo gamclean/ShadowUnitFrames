@@ -580,16 +580,35 @@ local function renderAura(parent, frame, type, config, displayConfig, index, fil
     end
     -- ====================================================================
 
+-- ====================================================================
+    -- FIXED MOP COLOR PROFILE ENGINE GUARD (LINE 587 DESTRUCTOR)
+    -- ====================================================================
+    local aurasProf = ShadowUF.db and ShadowUF.db.profile and ShadowUF.db.profile.auras
+    local colorsProf = ShadowUF.db and ShadowUF.db.profile and ShadowUF.db.profile.auraColors
+    local disableColor = aurasProf and aurasProf.disableColor
+
     -- Show debuff border, or a special colored border if it's stealable
-    if( isRemovable and not isFriendly and not ShadowUF.db.profile.auras.disableColor ) then
-        button.border:SetVertexColor(ShadowUF.db.profile.auraColors.removable.r, ShadowUF.db.profile.auraColors.removable.g, ShadowUF.db.profile.auraColors.removable.b)
-    elseif( ( not isFriendly or type == "debuffs" ) and not ShadowUF.db.profile.auras.disableColor ) then
-        local color = auraType and DebuffTypeColor[auraType] or DebuffTypeColor.none
-        button.border:SetVertexColor(color.r, color.g, color.b)
+    if( isRemovable and not isFriendly and not disableColor and colorsProf and colorsProf.removable ) then
+        button.border:SetVertexColor(colorsProf.removable.r, colorsProf.removable.g, colorsProf.removable.b)
+elseif( ( not isFriendly or type == "debuffs" ) and not disableColor ) then
+        -- ====================================================================
+        -- FIXED LINE 594 ENGINE GUARD: Explicit global table verification
+        -- ====================================================================
+        local color
+        if DebuffTypeColor then
+            color = auraType and DebuffTypeColor[auraType] or DebuffTypeColor.none
+        end
+        
+        if color and color.r and color.g and color.b then
+            button.border:SetVertexColor(color.r, color.g, color.b)
+        else
+            button.border:SetVertexColor(0.80, 0.20, 0.20) -- Standard fallback debuff red
+        end
+        -- ====================================================================
     else
         button.border:SetVertexColor(0.60, 0.60, 0.60)
     end
-
+    -- ====================================================================
     -- Show the cooldown ring
     if( not ShadowUF.db.profile.auras.disableCooldown and duration > 0 and endTime > 0 and ( config.timers.ALL or ( category == "player" and config.timers.SELF ) or ( category == "boss" and config.timers.BOSS ) ) ) then
         button.cooldown:SetCooldown(endTime - duration, duration)
@@ -617,7 +636,7 @@ local function renderAura(parent, frame, type, config, displayConfig, index, fil
     button.auraID = index
     button.spellID = spellID
     button.filter = filter
-    button.unit = frame.parent.unit
+    button.unit = (frame.parent and frame.parent.unit) or "player"
     button.columnHasScaled = nil
     button.previousHasScale = nil
     button.icon:SetTexture(texture)

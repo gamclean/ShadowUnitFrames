@@ -229,9 +229,17 @@ local function OnShowForced(self)
 end
 
 local function OnShow(self)
-	-- Reset the event handler
-	self:SetScript("OnEvent", OnEvent)
-	Units:CheckUnitStatus(self)
+    -- ====================================================================
+    -- FRAME VISIBILITY FIREWALL: Ignore hidden or unprofiled frames waking up
+    -- ====================================================================
+    if not self or not self.unitType then 
+        return 
+    end
+    -- ====================================================================
+
+    -- Reset the event handler
+    self:SetScript("OnEvent", OnEvent)
+    Units:CheckUnitStatus(self)
 end
 
 local function OnHide(self)
@@ -606,7 +614,11 @@ function Units:CreateUnit(...)
 	frame:SetScript("OnEvent", OnEvent)
 	frame:HookScript("OnEnter", OnEnter)
 	frame:HookScript("OnLeave", OnLeave)
-	frame:SetScript("OnShow", OnShow)
+    frame:SetScript("OnShow", function(self)
+        if self and self.unitType then
+            OnShow(self)
+        end
+    end)	
 	frame:SetScript("OnHide", OnHide)
 
 	frame.OnEnter = SUF_OnEnter
